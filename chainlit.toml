@@ -1,0 +1,8 @@
+[project]
+name = "Meeting Bot"
+description = "An AI assistant for scheduling and summarizing meetings"
+
+[UI]
+theme = "dark"
+show_feedback = true
+show_user_avatar = true
