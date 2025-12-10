@@ -1,5 +1,6 @@
 from agents import Agent, function_tool
 
+
 @function_tool
 def cancel_meeting(meeting_id, reason=None):
     """Cancels a meeting by ID."""

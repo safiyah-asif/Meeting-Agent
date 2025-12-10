@@ -17,7 +17,6 @@ def schedule_meeting(organizer_name, participant_name, meeting_date, meeting_tim
         "message": confirmation_msg
     }
 
-
 def meeting_scheduler_agent(model):
     return Agent(
         name="Scheduler",

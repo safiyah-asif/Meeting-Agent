@@ -2,22 +2,14 @@
 chainlit
 python-dotenv
 openai-agents
+google-generativeai
 
 # OpenAI LLM support
 openai
-langchain-openai
-
-# LangChain core & community packages
-langchain
-langchain-core
-langchain-community
-
-# Optional: Groq support
-langchain-groq
-groq
 
 # Google Calendar API
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+
 
