@@ -8,70 +8,170 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 
+
 # It gives us the access to read/write to the users calendar
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-
-def get_upcoming_events():
+# Get valid credentials for google calendar API
+def get_credentials():
     creds = None
+    # Load existing credentials
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+
+    # If no credentials or invalid, refresh or login    
     if not creds or not creds.valid:
         if creds and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file("D:/Eishal Work/6th Semester/Meeting-Agent/credentials.json", SCOPES)
             creds = flow.run_local_server(port=0)
+
+        # Save new credentials    
         with open("token.json", "w") as token:
             token.write(creds.to_json())
 
+    return creds    
+    
+# Create an event in Google Calendar
+def create_event(title, description, start_datetime, end_datetime, location=None):
+    """
+    Adds a meeting to Google Calendar.
+    start_datetime and end_datetime should be in datetime objects.
+    """
+    creds = get_credentials()
     service = build("calendar", "v3", credentials=creds)
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+
+    event = {
+        "summary": title,
+        "location": location,
+        "description": description,
+        "start": {
+            "dateTime": start_datetime.isoformat(),
+            "timeZone": "Asia/Karachi",
+        },
+        "end": {
+            "dateTime": end_datetime.isoformat(),
+            "timeZone": "Asia/Karachi",
+        },
+
+    }
+
+    # Try inserting the event and catch errors
+    try:
+        created_event = service.events().insert(calendarId="primary", body=event).execute()
+    except Exception as e:
+        print("Error creating event:", e)
+        return {"status": "Failed", "message": str(e)}
+
+    return {
+        "event_id": created_event.get("id"),
+        "htmlLink": created_event.get("htmlLink"),
+        "status": "Created"
+
+    }
+
+# List upcoming events
+def list_upcoming_events(max_results=10):
+    creads = get_credentials()
+    service = build("calendar", "v3", credentials=creads)
+
     events_result = service.events().list(
         calendarId="primary",
-        timeMin=now,
-        maxResults=5,
-        singleEvents=True,
-        orderBy="startTime"
+        maxResults = max_results,
+        singleEvents = True,
+        orderBy = "startTime"   
     ).execute()
+
     events = events_result.get("items", [])
 
-    event_list = []
-    for event in events:
-        start = event["start"].get("dateTime", event["start"].get("date"))
-        event_list.append((start, event.get("summary", "No Title")))
-    return event_list
+    return[ {
+        "event_id": e["id"],
+        "summary": e.get("summary", "No Title"),
+        "start": e["start"].get("dateTime", e["start"].get("date")),
+        
+    } for e in events ]
+    
 
 
-def main():
-    creds = None  # credentials is none because right now it does not have permission to access google account
+# Reschedule using date + time (good for chatbot)
+def update_event_time(event_id, new_date, new_time):
+    """
+    Reschedules an existing event in Google Calendar by updating its start and end time.
+    new_start_datetime and new_end_datetime should be in datetime objects.
 
-    if os.path.exists("token.json"):
-        # this loads the save credentials from the file so that the user does not have to re-authorize on every run
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    """
+    new_datetime = f"{new_date}T{new_time}:00"
 
-    if not creds or not creds.valid:
-        if creds and creds.refresh_token:
-            # If there is no new token it will automatically get new access tokens without user interaction
-            creds.refresh(Request())
+    creads = get_credentials()
+    service = build("calendar", "v3", credentials=creads)
 
-        # In else condition it is checking if there is no credentials meaning it is running for the first time
-        else:
-            # It will ask user to login into your google account, and after login it will send back new credentials
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
+    try:
+        # get existing event
+        event = service.events().get(calendarId="primary", eventId=event_id).execute()
 
-        # Save credentials for next time
-        # It will create a token.json file where it will write ("w") new content
-        with open("token.json", "w") as token:
-            # to_json will convert the credentials to json string
-            token.write(creds.to_json())
+        # update start and end time
+        event["start"]["dateTime"] = new_datetime
+        event["end"]["dateTime"] = new_datetime  # assuming 1-hour meeting
 
-    # It creates a google calendar API
+        updated_event = service.events().update(
+            calendarId="primary", 
+            eventId=event_id, 
+            body=event
+            ).execute()
+        
+        return{
+            "status": "Success",
+            "event_id": event_id,
+            "new_datetime": new_datetime,
+            "htmlLink": updated_event.get("htmlLink")
+        }
+    
+    except Exception as e:
+        return{
+            "status": "Failed",
+            "message": str(e)
+        }
+
+# Reschedule using datetime objects (good for backend logic)
+def update_event(event_id, new_start, new_end):
+    """
+    Fully updates an event's start and end datetime.
+    Works with datetime.datetime objects.
+    """
+    creds = get_credentials()
     service = build("calendar", "v3", credentials=creds)
 
+    try:
+        event = service.events().get(calendarId="primary", eventId=event_id).execute()
+
+        event['start'] = {
+            "dateTime": new_start.isoformat(),
+            "timeZone": "Asia/Karachi",
+        }
+
+        event['end'] = {
+            "dateTime": new_end.isoformat(),
+            "timeZone": "Asia/Karachi",    
+        }
+
+        updated_event = service.events().update(
+            calendarId="primary",
+            eventId=event_id,
+            body=event
+        ).execute()
+
+        return{
+            "status": "Success",
+            "event_id": event_id,
+            "htmlLink": updated_event.get("htmlLink")
+        }
+    
+    except Exception as e:
+        return {"status": "Failed", "error": str(e)}
+
+def main():
+    get_credentials()
 
 if __name__ == "__main__":
     main()
