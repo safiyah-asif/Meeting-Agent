@@ -1,14 +1,23 @@
 from agents import Agent, function_tool
-
+from calendar_setup import delete_event
 
 @function_tool
-def cancel_meeting(meeting_id, reason=None):
-    """Cancels a meeting by ID."""
+def cancel_meeting(event_id, reason=None):
+    """Cancels a meeting from Google Calendar."""
+    result = delete_event(event_id)
+
+    if result["status"] == "Failed":
+        return {
+            "status": "Failed",
+            "event_id": event_id,
+            "message": result["message"]
+        }
+
     return {
-        "meeting_id": meeting_id,
+        "meeting_id": event_id,
         "status": "Cancelled",
         "reason": reason or "Not specified",
-        "message": "Meeting cancelled successfully."
+        "message": "✅ Meeting cancelled successfully."
     }
 
 

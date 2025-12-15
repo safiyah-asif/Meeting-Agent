@@ -1,12 +1,12 @@
 from agents import Agent, function_tool
-from calendar_setup import update_event_time
+from calendar_setup import reschedule_event
 import random
 
 
 @function_tool
 def reschedule_meeting(event_id, new_date, new_time, reason=None):
     """Reschedules an existing meeting to new date and time."""
-    result = update_event_time(event_id, new_date, new_time)
+    result = reschedule_event(event_id, new_date, new_time)
 
     if result["status"] == "Failed":
         return{

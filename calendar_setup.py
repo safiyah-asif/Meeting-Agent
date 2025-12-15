@@ -134,7 +134,7 @@ def update_event_time(event_id, new_date, new_time):
         }
 
 # Reschedule using datetime objects (good for backend logic)
-def update_event(event_id, new_start, new_end):
+def reschedule_event(event_id, new_start, new_end):
     """
     Fully updates an event's start and end datetime.
     Works with datetime.datetime objects.
@@ -169,6 +169,73 @@ def update_event(event_id, new_start, new_end):
     
     except Exception as e:
         return {"status": "Failed", "error": str(e)}
+    
+
+def delete_event(event_id):
+    """
+    Deletes an event from Google Calendar.
+    """
+    creds = get_credentials()
+    service = build("calendar", "v3", credentials=creds)
+
+    try:
+        service.events().delete(
+            calendarId="primary",
+            eventId=event_id
+        ).execute()
+
+        return {
+            "status": "Cancelled",
+            "event_id": event_id
+        }
+
+    except Exception as e:
+        return {
+            "status": "Failed",
+            "message": str(e)
+        }
+
+
+def update_event_details(event_id, updates):
+    """
+    Updates event fields like summary (topic), location, description.
+    """
+    creds = get_credentials()
+    service = build("calendar", "v3", credentials=creds)
+
+    try:
+        event = service.events().get(
+            calendarId="primary",
+            eventId=event_id
+        ).execute()
+
+        if "topic" in updates:
+            event["summary"] = updates["topic"]
+
+        if "location" in updates:
+            event["location"] = updates["location"]
+
+        if "description" in updates:
+            event["description"] = updates["description"]
+
+        updated_event = service.events().update(
+            calendarId="primary",
+            eventId=event_id,
+            body=event
+        ).execute()
+
+        return {
+            "status": "Updated",
+            "event_id": event_id,
+            "htmlLink": updated_event.get("htmlLink")
+        }
+
+    except Exception as e:
+        return {
+            "status": "Failed",
+            "message": str(e)
+        }
+
 
 def main():
     get_credentials()

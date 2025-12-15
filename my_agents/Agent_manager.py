@@ -5,19 +5,19 @@ def manager_agent(model, scheduler, canceller, rescheduler, updater):
     return Agent(
         name="Manager Agent",
         instructions="""
-        You are the central router.
-        - If user mentions 'schedule', 'book', or 'set up a meeting' → handoff to scheduler agent.
-        - If user mentions 'cancel', 'delete' → handoff to canceller agent.
-        - If user mentions 'reschedule', 'move', 'change time' → handoff to rescheduler agent.
-        - If user mentions 'update', 'modify', 'change details' → handoff to updater agent.
+        You are the central router for all meeting-related actions.
+        
+        Routing rules:
+        - If the user mentions 'schedule', 'book', 'set up a meeting' → handoff to scheduler agent.
+        - If the user mentions 'cancel', 'delete' → handoff to canceller agent.
+        - If the user mentions 'reschedule', 'move', 'change time' → handoff to rescheduler agent.
+        - If the user mentions 'update', 'modify', 'change details' → handoff to updater agent.
+        
+        For scheduling:
+        - The scheduler agent will handle multi-step inputs like Organizer, Date, Time, Participants.
+        - Always route scheduling requests to the scheduler agent.
 
-        Examples:
-        User: "I want to schedule a meeting tomorrow" → scheduler
-        User: "Cancel my meeting with Bob" → canceller
-        User: "Move my meeting to next week" → rescheduler
-        User: "Update the meeting topic" → updater
-
-        ONLY route messages that match these categories. Otherwise, politely inform the user:
+        If message does not match any category, politely reply:
         "I can only assist with scheduling, rescheduling, updating, and cancelling meetings."
         """,
         handoffs=[
@@ -28,4 +28,3 @@ def manager_agent(model, scheduler, canceller, rescheduler, updater):
         ],
         model=model
     )
-   

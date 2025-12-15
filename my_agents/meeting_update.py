@@ -1,17 +1,27 @@
 from agents import Agent, function_tool
+from calendar_setup import update_event_details
 
 
 @function_tool
-def update_meeting(meeting_id, updates):
+def update_meeting(event_id, updates):
     """
-    Updates meeting details. Updates should be a dict with keys like:
-    topic, location, participants, etc.
+    Updates meeting details such as topic or location.
     """
+    result = update_event_details(event_id, updates)
+
+    if result["status"] == "Failed":
+        return {
+            "status": "Failed",
+            "event_id": event_id,
+            "message": result["message"]
+        }
+
     return {
-        "meeting_id": meeting_id,
+        "meeting_id": event_id,
         "status": "Updated",
         "updates": updates,
-        "message": "Meeting updated successfully."
+        "calendar_link": result.get("htmlLink"),
+        "message": "✅ Meeting updated successfully."
     }
 
 
@@ -22,6 +32,7 @@ def meeting_update_agent(model):
         You are a meeting update assistant.
         - Use update_meeting() when user wants to modify meeting details (topic, location, participants, etc.).
         - Ask for meeting ID and what needs to be updated if not provided.
+        - Supported updates: topic, location, description.
         - Confirm updates in a polite tone.
         """,
         tools=[update_meeting],

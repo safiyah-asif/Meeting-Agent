@@ -9,7 +9,7 @@ from my_agents.meeting_rescheduler import meeting_rescheduler_agent
 from my_agents.meeting_update import meeting_update_agent
 from my_agents.meeting_scheduler import meeting_scheduler_agent
 from agents import Runner, AsyncOpenAI, OpenAIChatCompletionsModel, set_tracing_disabled
-from calendar_setup import list_upcoming_events, update_event, update_event_time
+from calendar_setup import list_upcoming_events, reschedule_event, update_event_time
 import nest_asyncio
 import datetime
 nest_asyncio.apply()
@@ -36,94 +36,117 @@ rescheduler_agent_obj = meeting_rescheduler_agent(model=model)
 updater_agent_obj = meeting_update_agent(model=model)
 
 
-
 # main agent
 starting_agent = manager_agent(
-    model=model, 
+    model=model,
     scheduler=scheduler_agent_obj,
-    canceller=canceller_agent_obj, 
-    rescheduler=rescheduler_agent_obj, 
-    updater=updater_agent_obj, 
-    )
+    canceller=canceller_agent_obj,
+    rescheduler=rescheduler_agent_obj,
+    updater=updater_agent_obj,
+)
 
 
 st.set_page_config(page_title="🚀 AI Meeting Assistant", page_icon="🌍")
 st.title("👋 Meeting Bot 🤖")
 
-if "memory" not in st.session_state:
-    st.session_state.memory = []
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-if "scheduler_memory" not in st.session_state:
-    st.session_state.scheduler_memory = {}    
+if "runner" not in st.session_state:
+    st.session_state.runner = Runner()
 
-if "manager" not in st.session_state:
-    st.session_state.manager = """You are MeetingBot 🤖 — a friendly assistant that helps manage meetings.
-    You can handle:
-    - ✅ Schedule a meeting
-    - 🔄 Reschedule a meeting  
-    - ❌ Cancel a meeting
-    - 📝 Update a meeting
-    Answer politely and concisely.
-    When taking information , ask one question at a time.
-    Carefully ask complete information as instructed and given in tool functions.
-    """
+if "active_flow" not in st.session_state:
+    st.session_state.active_flow = None
+# if not st.session_state.chat_history:
+#     greeting = """You are MeetingBot 🤖 — a friendly assistant that helps manage meetings.
+#     You can handle:
+#     - ✅ Schedule a meeting
+#     - 🔄 Reschedule a meeting
+#     - ❌ Cancel a meeting
+#     - 📝 Update a meeting
+#     Answer politely and concisely.
+#     When taking information , ask one question at a time.
+#     Carefully ask complete information as instructed and given in tool functions.
+#     """
 
-if not st.session_state.memory:
-    greeting = """👋 Hello! I'm your Meeting Bot 🤖.
-I can help you with:
-- Schedule a meeting
-- Check your calendar
-- Cancel or update a meeting
-- Reschedule a meeting
-How can I assist you today?
-"""
-    st.session_state.memory.append({"role": "assistant", "content": greeting})
+if not st.session_state.chat_history:
+    greeting = """👋 Hello! I'm your Meeting Bot 🤖.\n
+    I can help you with:\n
+    - ✅ Schedule a meeting \n
+    - 🔄 Reschedule a meeting \n
+    - ❌ Cancel a meeting \n
+    - 📝 Update a meeting \n
+    How can I assist you today?"""
+    st.session_state.chat_history.append(
+        {"role": "assistant", "content": greeting})
 
 # display chat history
-for msg in st.session_state.memory:
+for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Initialize runner & messages
-if "runner" not in st.session_state:
-    st.session_state.runner = Runner()
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# ------------------ INTENT DETECTION ------------------
 
-# Render chat history
-for m in st.session_state.messages:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
+
+def detect_intent(text: str):
+    text = text.lower()
+    if any(x in text for x in ["schedule", "set up", "book meeting"]):
+        return "schedule"
+    if any(x in text for x in ["cancel", "delete"]):
+        return "cancel"
+    if any(x in text for x in ["reschedule", "move"]):
+        return "reschedule"
+    if any(x in text for x in ["update", "modify"]):
+        return "update"
+    return None
+
 
 # Chat input
 if user_msg := st.chat_input("Type your message here:"):
-    # Save user input to history
-    if user_msg and user_msg.strip():
-        st.session_state.memory.append({"role": "user", "content": user_msg})
+    if user_msg.strip():
+        # Save user message
+        st.session_state.chat_history.append(
+            {"role": "user", "content": user_msg}
+        )
 
-        # Show User Message in the Chatclear
         with st.chat_message("user"):
             st.markdown(user_msg)
 
-        # Stream the agent’s reply
         with st.chat_message("assistant"):
-            placeholder = st.empty()
-            partial = ""
+            if st.session_state.active_flow == "schedule":
+                result = st.session_state.runner.run_sync(
+                    starting_agent=scheduler_agent_obj,
+                    input=user_msg,
+                    context=st.session_state.chat_history,
+                )
 
-            result = st.session_state.runner.run_sync(
-                starting_agent=starting_agent,
-                input=user_msg,
-                context=st.session_state.memory  # << your conversation history
-            )
+            else:
+                # detect intent only ONCE
+                intent = detect_intent(user_msg)
 
-            final_output = result.final_output 
-            st.write(final_output)
-            st.session_state.memory.append(
-                {"role": "assistant", "content": final_output})
+                if intent == "schedule":
+                    st.session_state.active_flow = "schedule"
+
+                result = st.session_state.runner.run_sync(
+                    starting_agent=starting_agent,
+                    input=user_msg,
+                    context=st.session_state.chat_history,
+                )
+
+            response = result.final_output
+            st.markdown(response)
+
+        # save assistant msg
+        st.session_state.chat_history.append(
+            {"role": "assistant", "content": response}
+        )
+
 
 # --- Conditional Reschedule UI ---
 show_reschedule_ui = any(
-    "reschedule" in m["content"].lower() for m in st.session_state.memory if m["role"] == "user"
+    "reschedule" in m["content"].lower()
+    for m in st.session_state.chat_history
+    if m["role"] == "user"
 )
 
 if show_reschedule_ui:
@@ -132,7 +155,7 @@ if show_reschedule_ui:
     st.header("🗓️ Google Calendar Meeting Rescheduler")
     st.write("select a meeting and choose a new date & time")
 
-    # Load upcoming events 
+    # Load upcoming events
     events = list_upcoming_events()
     if not events:
         st.warning("No upcoming meetings found.")
@@ -141,8 +164,9 @@ if show_reschedule_ui:
             f"{e['summary']} — {e['start']}": e["event_id"] for e in events
         }
 
-        selected_label = st.selectbox("Choose a meeting to reschedule:", list(event_options.keys())) 
-        selected_event_id = event_options[selected_label]   
+        selected_label = st.selectbox(
+            "Choose a meeting to reschedule:", list(event_options.keys()))
+        selected_event_id = event_options[selected_label]
         st.write(f"Selected Event ID: {selected_event_id}")
 
         # New date & time
@@ -153,11 +177,13 @@ if show_reschedule_ui:
 
         if st.button("Reschedule Meeting"):
             with st.spinner("Rescheduling meeting..."):
-                result = update_event(selected_event_id, new_start, new_end)
+                result = reschedule_event(
+                    selected_event_id, new_start, new_end)
 
             if result["status"] == "Success":
                 st.success("Meeting rescheduled successfully!")
-                st.markdown(f"[Open in google calendar]({result['htmlLink']})")   
+                st.markdown(f"[Open in google calendar]({result['htmlLink']})")
             else:
-                st.error(f"Failed to reschedule meeting: {result.get('error', 'Unknown error')}")
-                st.code(result["error"]) 
+                st.error(
+                    f"Failed to reschedule meeting: {result.get('error', 'Unknown error')}")
+                st.code(result["error"])
