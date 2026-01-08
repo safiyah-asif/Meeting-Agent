@@ -7,34 +7,39 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-
+PKT = datetime.timezone(datetime.timedelta(hours=5))
 
 # It gives us the access to read/write to the users calendar
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 # Get valid credentials for google calendar API
+
+
 def get_credentials():
     creds = None
     # Load existing credentials
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
-    # If no credentials or invalid, refresh or login    
+    # If no credentials or invalid, refresh or login
     if not creds or not creds.valid:
         if creds and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file("D:/Eishal Work/6th Semester/Meeting-Agent/credentials.json", SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                "D:/Eishal Work/6th Semester/Meeting-Agent/credentials.json", SCOPES)
             creds = flow.run_local_server(port=0)
 
-        # Save new credentials    
+        # Save new credentials
         with open("token.json", "w") as token:
             token.write(creds.to_json())
 
-    return creds    
-    
+    return creds
+
 # Create an event in Google Calendar
-def create_event(title, description, start_datetime, end_datetime, location=None):
+
+
+def create_event(title, description, start_datetime, end_datetime, location=None, attendees=None, send_updates: bool = False):
     """
     Adds a meeting to Google Calendar.
     start_datetime and end_datetime should be in datetime objects.
@@ -57,9 +62,18 @@ def create_event(title, description, start_datetime, end_datetime, location=None
 
     }
 
+    if attendees:
+        event["attendees"] = []
+        for a in attendees:
+            entry = {"email": a.get("email")}
+            if a.get("name"):
+                entry["displayName"] = a.get("name")
+            event["attendees"].append(entry)
+
     # Try inserting the event and catch errors
     try:
-        created_event = service.events().insert(calendarId="primary", body=event).execute()
+        created_event = service.events().insert(
+            calendarId="primary", body=event).execute()
     except Exception as e:
         print("Error creating event:", e)
         return {"status": "Failed", "message": str(e)}
@@ -71,70 +85,82 @@ def create_event(title, description, start_datetime, end_datetime, location=None
 
     }
 
+# for meeting selection (cancel_agent, reschedule_agent)
+def list_meetings_for_selection(max_results=10):
+    """
+    Returns a numbered list of upcoming meetings with actual Google Calendar event_ids.
+    """
+    events = list_upcoming_events(max_results=max_results)
+    selectable = []
+    for idx, e in enumerate(events, start=1):
+        selectable.append({
+            "index": idx,
+            "label": f"{e['summary']} — {e['start']}",
+            "event_id": e["event_id"]  # ⚡ real Google event ID
+        })
+    return selectable
+
+
 # List upcoming events
+
 def list_upcoming_events(max_results=10):
-    creads = get_credentials()
-    service = build("calendar", "v3", credentials=creads)
+    creds = get_credentials()
+    service = build("calendar", "v3", credentials=creds)
 
     events_result = service.events().list(
         calendarId="primary",
-        maxResults = max_results,
-        singleEvents = True,
-        orderBy = "startTime"   
+        maxResults=max_results,
+        singleEvents=True,
+        orderBy="startTime"
     ).execute()
 
     events = events_result.get("items", [])
 
-    return[ {
+    return [{
         "event_id": e["id"],
         "summary": e.get("summary", "No Title"),
         "start": e["start"].get("dateTime", e["start"].get("date")),
-        
-    } for e in events ]
-    
+        # ✅ added end time
+        "end": e["end"].get("dateTime", e["end"].get("date")),
+    } for e in events]
 
 
 # Reschedule using date + time (good for chatbot)
-def update_event_time(event_id, new_date, new_time):
+def update_event_time(event_id, new_start, new_end=None):
     """
-    Reschedules an existing event in Google Calendar by updating its start and end time.
-    new_start_datetime and new_end_datetime should be in datetime objects.
-
+    Reschedules an existing event in Google Calendar.
+    new_start, new_end should be datetime objects
     """
-    new_datetime = f"{new_date}T{new_time}:00"
+    if new_end is None:
+        new_end = new_start + datetime.timedelta(hours=1)  # default 1 hour
 
-    creads = get_credentials()
-    service = build("calendar", "v3", credentials=creads)
+    creds = get_credentials()
+    service = build("calendar", "v3", credentials=creds)
 
     try:
-        # get existing event
         event = service.events().get(calendarId="primary", eventId=event_id).execute()
-
-        # update start and end time
-        event["start"]["dateTime"] = new_datetime
-        event["end"]["dateTime"] = new_datetime  # assuming 1-hour meeting
+        event["start"]["dateTime"] = new_start.isoformat()
+        event["end"]["dateTime"] = new_end.isoformat()
 
         updated_event = service.events().update(
-            calendarId="primary", 
-            eventId=event_id, 
+            calendarId="primary",
+            eventId=event_id,
             body=event
-            ).execute()
-        
-        return{
+        ).execute()
+
+        return {
             "status": "Success",
             "event_id": event_id,
-            "new_datetime": new_datetime,
             "htmlLink": updated_event.get("htmlLink")
         }
-    
+
     except Exception as e:
-        return{
-            "status": "Failed",
-            "message": str(e)
-        }
+        return {"status": "Failed", "message": str(e)}
 
 # Reschedule using datetime objects (good for backend logic)
-def reschedule_event(event_id, new_start, new_end):
+
+
+def update_event(event_id, new_start, new_end):
     """
     Fully updates an event's start and end datetime.
     Works with datetime.datetime objects.
@@ -152,7 +178,7 @@ def reschedule_event(event_id, new_start, new_end):
 
         event['end'] = {
             "dateTime": new_end.isoformat(),
-            "timeZone": "Asia/Karachi",    
+            "timeZone": "Asia/Karachi",
         }
 
         updated_event = service.events().update(
@@ -161,15 +187,17 @@ def reschedule_event(event_id, new_start, new_end):
             body=event
         ).execute()
 
-        return{
+        return {
             "status": "Success",
             "event_id": event_id,
             "htmlLink": updated_event.get("htmlLink")
         }
-    
+
     except Exception as e:
         return {"status": "Failed", "error": str(e)}
-    
+
+# Delete an event (delete_agent)
+
 
 def delete_event(event_id):
     """
@@ -195,6 +223,8 @@ def delete_event(event_id):
             "message": str(e)
         }
 
+# Update event details (update_agent)
+
 
 def update_event_details(event_id, updates):
     """
@@ -211,9 +241,6 @@ def update_event_details(event_id, updates):
 
         if "topic" in updates:
             event["summary"] = updates["topic"]
-
-        if "location" in updates:
-            event["location"] = updates["location"]
 
         if "description" in updates:
             event["description"] = updates["description"]
@@ -237,8 +264,30 @@ def update_event_details(event_id, updates):
         }
 
 
+def is_time_slot_free(start_datetime, end_datetime, exclude_event_id=None):
+    """
+    Check if a given time slot is free in the user's calendar.
+    exclude_event_id: ignore a specific event (useful for rescheduling)
+    Returns True if free, False if there’s a clash.
+    """
+    events = list_upcoming_events(max_results=50)
+    for e in events:
+        if exclude_event_id and e["event_id"] == exclude_event_id:
+            continue
+        existing_start = datetime.datetime.fromisoformat(
+            e["start"]).astimezone(PKT)
+        existing_end = datetime.datetime.fromisoformat(
+            e["end"]).astimezone(PKT)
+
+        # check overlap
+        if start_datetime < existing_end and end_datetime > existing_start:
+            return False
+    return True
+
+
 def main():
     get_credentials()
+
 
 if __name__ == "__main__":
     main()

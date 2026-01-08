@@ -1,5 +1,5 @@
 # Core
-chainlit
+streamlit
 python-dotenv
 openai-agents
 google-generativeai
@@ -12,5 +12,10 @@ google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 
+pydantic
+nest-asyncio
 
-
+openai-whisper
+streamlit-webrtc
+soundfile
+av
